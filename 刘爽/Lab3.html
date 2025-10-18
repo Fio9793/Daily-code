@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>表格与双可视化联动实验（修复初始化问题）</title>
+    <link rel="stylesheet" href="https://unpkg.com/x-data-spreadsheet@1.1.5/dist/xspreadsheet.css" />
+    <script src="https://unpkg.com/x-data-spreadsheet@1.1.5/dist/xspreadsheet.js"></script>
+    <script src="https://unpkg.com/x-data-spreadsheet@1.1.9/dist/locale/zh-cn.js"></script>
+    <script src="https://d3js.org/d3.v6.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f7fa;
+            color: #333;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .spreadsheet-container {
+            margin-bottom: 30px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        #xspreadsheet {
+            height: 400px;
+            border: 1px solid #ddd;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .control-panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 20px 0;
+            padding: 15px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .checkbox-group {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .checkbox-group label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        
+        .checkbox {
+            margin-right: 5px;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background-color 0.3s;
+        }
+        
+        .btn-primary {
+            background-color: #3498db;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: #2980b9;
+        }
+        
+        .btn-success {
+            background-color: #2ecc71;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background-color: #27ae60;
+        }
+        
+        .btn-warning {
+            background-color: #f39c12;
+            color: white;
+        }
+        
+        .btn-warning:hover {
+            background-color: #e67e22;
+        }
+        
+        #viz-container {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        #bar-chart-container, #line-chart-container {
+            flex: 1;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .chart-title {
+            text-align: center;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+        
+        .chart-area {
+            flex: 1;
+        }
+        
+        .instructions {
+            margin-top: 30px;
+            padding: 15px;
+            background-color: #e8f4fc;
+            border-radius: 8px;
+            border-left: 4px solid #3498db;
+        }
+        
+        .instructions h3 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        
+        .instructions ul {
+            margin-bottom: 0;
+        }
+        
+        .status-message {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            text-align: center;
+            font-weight: 500;
+        }
+        
+        .status-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>表格与双可视化联动实验（修复初始化问题）</h1>
+        
+        <div class="spreadsheet-container">
+            <div id="xspreadsheet"></div>
+        </div>
+        
+        <div class="control-panel">
+            <div class="checkbox-group">
+                <label>
+                    <input type="checkbox" class="checkbox" id="showBarChart" value="barchart" checked />
+                    显示柱状图
+                </label>
+                <label>
+                    <input type="checkbox" class="checkbox" id="showLineChart" value="linechart" checked />
+                    显示折线图
+                </label>
+            </div>
+            
+            <div class="button-group">
+                <button class="btn btn-primary" id="saveData">保存数据</button>
+                <button class="btn btn-success" id="loadData">加载数据</button>
+                <button class="btn btn-warning" id="resetData">重置数据</button>
+            </div>
+        </div>
+        
+        <div id="statusMessage"></div>
+        
+        <div id="viz-container">
+            <div id="bar-chart-container">
+                <div class="chart-title">年份-学科数据柱状图</div>
+                <div id="bar-chart" class="chart-area"></div>
+            </div>
+            <div id="line-chart-container">
+                <div class="chart-title">年份-学科数据折线图</div>
+                <div id="line-chart" class="chart-area"></div>
+            </div>
+        </div>
+        
+        <div class="instructions">
+            <h3>使用说明</h3>
+            <ul>
+                <li>直接在表格中编辑数据，图表会自动更新</li>
+                <li>第一行是学科名称，第一列是年份</li>
+                <li>数据区域请填写数字</li>
+                <li>通过复选框控制显示/隐藏图表</li>
+                <li>使用"保存数据"按钮将数据保存到浏览器本地存储</li>
+                <li>使用"加载数据"按钮从本地存储恢复数据</li>
+                <li>使用"重置数据"按钮恢复初始示例数据</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        x_spreadsheet.locale("zh-cn");
+        let xs;
+
+        // 初始数据定义 - 使用x-spreadsheet的数据格式
+        const initialData = [{
+            "name": "Sheet1",
+            "rows": {
+                "0": {
+                    "cells": {
+                        "0": { "text": "" },
+                        "1": { "text": "计算机" },
+                        "2": { "text": "法学" },
+                        "3": { "text": "医学" },
+                        "4": { "text": "经济学" }
+                    }
+                },
+                "1": {
+                    "cells": {
+                        "0": { "text": "2017" },
+                        "1": { "text": "23" },
+                        "2": { "text": "15" },
+                        "3": { "text": "28" },
+                        "4": { "text": "19" }
+                    }
+                },
+                "2": {
+                    "cells": {
+                        "0": { "text": "2018" },
+                        "1": { "text": "36" },
+                        "2": { "text": "26" },
+                        "3": { "text": "32" },
+                        "4": { "text": "24" }
+                    }
+                },
+                "3": {
+                    "cells": {
+                        "0": { "text": "2019" },
+                        "1": { "text": "23" },
+                        "2": { "text": "33" },
+                        "3": { "text": "29" },
+                        "4": { "text": "31" }
+                    }
+                },
+                "4": {
+                    "cells": {
+                        "0": { "text": "2020" },
+                        "1": { "text": "22" },
+                        "2": { "text": "10" },
+                        "3": { "text": "25" },
+                        "4": { "text": "17" }
+                    }
+                },
+                "5": {
+                    "cells": {
+                        "0": { "text": "2021" },
+                        "1": { "text": "30" },
+                        "2": { "text": "28" },
+                        "3": { "text": "35" },
+                        "4": { "text": "26" }
+                    }
+                }
+            }
+        }];
+
+        // 初始化表格并直接加载数据
+        function initializeSpreadsheetWithData() {
+            // 如果表格已存在，先销毁
+            if (xs) {
+                const container = document.getElementById('xspreadsheet');
+                container.innerHTML = '';
+            }
+            
+            // 创建新表格实例并直接加载数据
+            xs = x_spreadsheet("#xspreadsheet", {
+                mode: 'edit',
+                showToolbar: true,
+                showGrid: true,
+                showContextmenu: true,
+                view: {
+                    height: () => 400,
+                    width: () => document.getElementById('xspreadsheet').clientWidth,
+                }
+            });
+            
+            // 直接加载初始数据
+            xs.loadData(initialData);
+            
+            // 设置事件监听
+            xs.on('cell-edited', updateAllViz);
+        }
+
+        // 保存数据到本地存储
+        function saveData() {
+            try {
+                const data = xs.getData();
+                localStorage.setItem('spreadsheetData', JSON.stringify(data));
+                showStatus('数据保存成功！', 'success');
+            } catch (error) {
+                console.error('保存数据时出错:', error);
+                showStatus('保存数据时出错: ' + error.message, 'error');
+            }
+        }
+
+        // 从本地存储加载数据
+        function loadData() {
+            try {
+                const savedData = localStorage.getItem('spreadsheetData');
+                if (savedData) {
+                    const data = JSON.parse(savedData);
+                    xs.loadData(data);
+                    showStatus('数据加载成功！', 'success');
+                    // 加载数据后更新图表
+                    setTimeout(updateAllViz, 100);
+                } else {
+                    showStatus('没有找到保存的数据', 'error');
+                }
+            } catch (error) {
+                console.error('加载数据时出错:', error);
+                showStatus('加载数据时出错: ' + error.message, 'error');
+            }
+        }
+
+        // 重置数据到初始状态
+        function resetData() {
+            if (confirm('确定要重置数据吗？这将清除所有当前数据并恢复初始示例数据。')) {
+                xs.loadData(initialData);
+                updateAllViz();
+                showStatus('数据已重置到初始状态', 'success');
+            }
+        }
+
+        // 显示状态消息
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('statusMessage');
+            statusDiv.textContent = message;
+            statusDiv.className = 'status-message';
+            statusDiv.classList.add(type === 'success' ? 'status-success' : 'status-error');
+            
+            // 3秒后自动隐藏消息
+            setTimeout(() => {
+                statusDiv.textContent = '';
+                statusDiv.className = 'status-message';
+            }, 3000);
+        }
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 先检查是否有保存的数据
+            const savedData = localStorage.getItem('spreadsheetData');
+            
+            if (savedData) {
+                // 询问用户是否加载保存的数据
+                if (confirm('检测到有保存的数据，是否加载？')) {
+                    // 先初始化表格
+                    initializeSpreadsheetWithData();
+                    // 然后加载保存的数据
+                    setTimeout(loadData, 100);
+                } else {
+                    // 用户选择不加载保存的数据，直接使用初始数据
+                    initializeSpreadsheetWithData();
+                }
+            } else {
+                // 没有保存的数据，直接使用初始数据
+                initializeSpreadsheetWithData();
+            }
+            
+            // 初始渲染图表（稍后执行，确保表格数据已加载）
+            setTimeout(updateAllViz, 300);
+            
+            // 绑定复选框事件
+            d3.selectAll(".checkbox").on("change", updateAllViz);
+        });
+
+        // 按钮事件监听
+        document.getElementById('saveData').addEventListener('click', saveData);
+        document.getElementById('loadData').addEventListener('click', loadData);
+        document.getElementById('resetData').addEventListener('click', resetData);
+
+        // 其余函数保持不变
+        function getColor(idx) {
+            const palette = ['#5ab1ef', '#ffb980', '#d87a80', '#2ec7c9', '#8d98b3', '#e5cf0d', '#97b552', '#95706d'];
+            return palette[idx % palette.length];
+        }
+
+        function getTableData() {
+            let data = [];
+            let yTitle = [];
+            let xTitle = [];
+            let rows = 0;
+            let cols = 0;
+
+            // 获取所有数据
+            const sheetData = xs.getData();
+            if (!sheetData || !sheetData[0] || !sheetData[0].rows) return null;
+
+            const rowsData = sheetData[0].rows;
+
+            // 获取列标题（第一行，从第二列开始）
+            if (rowsData["0"] && rowsData["0"].cells) {
+                const firstRow = rowsData["0"].cells;
+                for (let i = 1; i < 20; i++) {
+                    if (firstRow[i] && firstRow[i].text) {
+                        xTitle.push(firstRow[i].text);
+                    } else {
+                        break;
+                    }
+                }
+            }
+
+            // 获取行标题和数据（从第二行开始）
+            for (let i = 1; i < 20; i++) {
+                if (rowsData[i] && rowsData[i].cells && rowsData[i].cells["0"] && rowsData[i].cells["0"].text) {
+                    yTitle.push(rowsData[i].cells["0"].text);
+                    data.push([]);
+                    
+                    // 获取该行的数据
+                    for (let j = 1; j < 20; j++) {
+                        if (rowsData[i].cells[j] && rowsData[i].cells[j].text && !isNaN(+rowsData[i].cells[j].text)) {
+                            data[i - 1].push(+rowsData[i].cells[j].text);
+                        } else if (rowsData[i].cells[j] && rowsData[i].cells[j].text) {
+                            alert("表格中存在无效数据，请输入数字！");
+                            return null;
+                        } else {
+                            break;
+                        }
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            // 确保所有行的数据长度一致
+            const maxCols = Math.max(...data.map(row => row.length));
+            data = data.map(row => {
+                while (row.length < maxCols) {
+                    row.push(0);
+                }
+                return row;
+            });
+
+            return { 
+                data, 
+                yTitle, 
+                xTitle: xTitle.slice(0, maxCols), 
+                maxValue: data.length > 0 ? Math.max(...data.flat()) : 0 
+            };
+        }
+
+        function drawBarChart(dataObj) {
+            const { data, yTitle, xTitle, maxValue } = dataObj;
+            const container = "#bar-chart";
+            d3.select(container).selectAll("svg").remove();
+
+            if (data.length === 0 || xTitle.length === 0) return;
+
+            const margin = { top: 40, right: 120, bottom: 60, left: 60 };
+            const width = 700 - margin.left - margin.right;
+            const height = 400 - margin.top - margin.bottom;
+
+            const svg = d3.select(container)
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+            const x = d3.scaleBand().domain(yTitle).range([0, width]).padding(0.2);
+            svg.append("g")
+                .attr("transform", `translate(0, ${height})`)
+                .call(d3.axisBottom(x).tickSizeOuter(0))
+                .selectAll("text")
+                .style("text-anchor", "end")
+                .attr("dx", "-.8em")
+                .attr("dy", ".15em")
+                .attr("transform", "rotate(-45)");
+
+            // X轴标签
+            svg.append("text")
+                .attr("class", "axis-label")
+                .attr("transform", `translate(${width / 2}, ${height + margin.bottom - 10})`)
+                .style("text-anchor", "middle")
+                .text("年份");
+
+            const y = d3.scaleLinear().domain([0, maxValue || 1]).range([height, 0]).nice();
+            svg.append("g").call(d3.axisLeft(y));
+
+            // Y轴标签
+            svg.append("text")
+                .attr("class", "axis-label")
+                .attr("transform", "rotate(-90)")
+                .attr("y", 0 - margin.left)
+                .attr("x", 0 - (height / 2))
+                .attr("dy", "1em")
+                .style("text-anchor", "middle")
+                .text("数值");
+
+            const xSubgroup = d3.scaleBand().domain(xTitle).range([0, x.bandwidth()]).padding(0.05);
+
+            const chartData = yTitle.map((group, i) => {
+                const item = { group };
+                xTitle.forEach((key, j) => item[key] = data[i] ? data[i][j] || 0 : 0);
+                return item;
+            });
+
+            svg.append("g")
+                .selectAll("g")
+                .data(chartData)
+                .join("g")
+                .attr("transform", d => `translate(${x(d.group)}, 0)`)
+                .selectAll("rect")
+                .data(d => xTitle.map(key => ({ key, value: d[key] })))
+                .join("rect")
+                .attr("x", d => xSubgroup(d.key))
+                .attr("y", d => y(d.value))
+                .attr("width", xSubgroup.bandwidth())
+                .attr("height", d => height - y(d.value))
+                .attr("fill", (d, i) => getColor(i));
+
+            svg.append("g")
+                .selectAll("g")
+                .data(chartData)
+                .join("g")
+                .attr("transform", d => `translate(${x(d.group)}, 0)`)
+                .selectAll("text")
+                .data(d => xTitle.map(key => ({ key, value: d[key] })))
+                .join("text")
+                .attr("x", d => xSubgroup(d.key) + xSubgroup.bandwidth()/2)
+                .attr("y", d => y(d.value) - 5)
+                .text(d => d.value)
+                .attr("text-anchor", "middle")
+                .style("font-size", "12px")
+                .style("font-weight", "bold");
+
+            // 图例
+            const legend = svg.selectAll(".bar-legend")
+                .data(xTitle)
+                .join("g")
+                .attr("class", "bar-legend")
+                .attr("transform", (d, i) => `translate(${width + 20}, ${i * 25})`);
+
+            legend.append("rect")
+                .attr("width", 18)
+                .attr("height", 18)
+                .attr("fill", (d, i) => getColor(i));
+
+            legend.append("text")
+                .attr("x", 25)
+                .attr("y", 12)
+                .text(d => d)
+                .style("font-size", "14px")
+                .attr("class", "legend");
+        }
+
+        function drawLineChart(dataObj) {
+            const { data, yTitle, xTitle, maxValue } = dataObj;
+            const container = "#line-chart";
+            d3.select(container).selectAll("svg").remove();
+
+            if (data.length === 0 || xTitle.length === 0) return;
+
+            const margin = { top: 40, right: 120, bottom: 60, left: 60 };
+            const width = 700 - margin.left - margin.right;
+            const height = 400 - margin.top - margin.bottom;
+
+            const svg = d3.select(container)
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+            const x = d3.scalePoint().domain(yTitle).range([0, width]).padding(0.1);
+            svg.append("g")
+                .attr("transform", `translate(0, ${height})`)
+                .call(d3.axisBottom(x).tickSizeOuter(0))
+                .selectAll("text")
+                .style("text-anchor", "end")
+                .attr("dx", "-.8em")
+                .attr("dy", ".15em")
+                .attr("transform", "rotate(-45)");
+
+            // X轴标签
+            svg.append("text")
+                .attr("class", "axis-label")
+                .attr("transform", `translate(${width / 2}, ${height + margin.bottom - 10})`)
+                .style("text-anchor", "middle")
+                .text("年份");
+
+            const y = d3.scaleLinear().domain([0, maxValue || 1]).range([height, 0]).nice();
+            svg.append("g").call(d3.axisLeft(y));
+
+            // Y轴标签
+            svg.append("text")
+                .attr("class", "axis-label")
+                .attr("transform", "rotate(-90)")
+                .attr("y", 0 - margin.left)
+                .attr("x", 0 - (height / 2))
+                .attr("dy", "1em")
+                .style("text-anchor", "middle")
+                .text("数值");
+
+            const lineGenerator = d3.line()
+                .x((d, i) => x(yTitle[i]))
+                .y(d => y(d))
+                .curve(d3.curveMonotoneX);
+
+            xTitle.forEach((subject, idx) => {
+                const subjectData = data.map(row => row[idx] || 0);
+                
+                svg.append("path")
+                    .datum(subjectData)
+                    .attr("fill", "none")
+                    .attr("stroke", getColor(idx))
+                    .attr("stroke-width", 2.5)
+                    .attr("d", lineGenerator);
+
+                svg.selectAll(`.line-point-${idx}`)
+                    .data(subjectData)
+                    .join("circle")
+                    .attr("class", `line-point-${idx}`)
+                    .attr("cx", (d, i) => x(yTitle[i]))
+                    .attr("cy", d => y(d))
+                    .attr("r", 5)
+                    .attr("fill", getColor(idx))
+                    .attr("stroke", "#fff")
+                    .attr("stroke-width", 1);
+
+                svg.selectAll(`.line-text-${idx}`)
+                    .data(subjectData)
+                    .join("text")
+                    .attr("class", `line-text-${idx}`)
+                    .attr("x", (d, i) => x(yTitle[i]))
+                    .attr("y", d => y(d) - 10)
+                    .text(d => d)
+                    .attr("text-anchor", "middle")
+                    .style("font-size", "12px")
+                    .style("font-weight", "bold");
+            });
+
+            // 图例
+            const legend = svg.selectAll(".line-legend")
+                .data(xTitle)
+                .join("g")
+                .attr("class", "line-legend")
+                .attr("transform", (d, i) => `translate(${width + 20}, ${i * 25})`);
+
+            legend.append("line")
+                .attr("x1", 0)
+                .attr("y1", 9)
+                .attr("x2", 18)
+                .attr("y2", 9)
+                .attr("stroke", (d, i) => getColor(i))
+                .attr("stroke-width", 2.5);
+
+            legend.append("text")
+                .attr("x", 25)
+                .attr("y", 12)
+                .text(d => d)
+                .style("font-size", "14px")
+                .attr("class", "legend");
+        }
+
+        function updateAllViz() {
+            const tableData = getTableData();
+            if (!tableData) return;
+
+            const showBar = d3.select("#showBarChart").property("checked");
+            if (showBar) {
+                drawBarChart(tableData);
+            } else {
+                d3.select("#bar-chart").selectAll("svg").remove();
+            }
+
+            const showLine = d3.select("#showLineChart").property("checked");
+            if (showLine) {
+                drawLineChart(tableData);
+            } else {
+                d3.select("#line-chart").selectAll("svg").remove();
+            }
+        }
+    </script>
+</body>
+</html>
