@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>电子表格多类型可视化实验</title>
+    <!-- 引入x-spreadsheet样式 -->
+    <link rel="stylesheet" href="https://unpkg.com/x-data-spreadsheet@1.1.5/dist/xspreadsheet.css" />
+    <!-- 引入x-spreadsheet核心库 -->
+    <script src="https://unpkg.com/x-data-spreadsheet@1.1.5/dist/xspreadsheet.js"></script>
+    <!-- 引入x-spreadsheet中文语言包 -->
+    <script src="https://unpkg.com/x-data-spreadsheet@1.1.9/dist/locale/zh-cn.js"></script>
+    <!-- 引入d3.js可视化库 -->
+    <script src="https://d3js.org/d3.v6.js"></script>
+    <style>
+        /* 电子表格容器样式 */
+        #xspreadsheet {
+            width: 400px;
+            height: 500px;
+            padding: 0px;
+            margin: 0px;
+        }
+        /* 可视化控制区样式（复选框+下拉菜单） */
+        #vis-control {
+            margin: 10px 0;
+            padding: 5px;
+        }
+        #chart-type {
+            margin-left: 10px;
+            padding: 2px 5px;
+        }
+        /* 可视化图表容器样式 */
+        #my_dataviz {
+            width: 1000px;
+            height: 900px;
+            padding: 0px;
+            margin: 0px;
+        }
+        /* 坐标轴文本样式 */
+        .tick text {
+            font-size: 12px;
+            fill: #333;
+        }
+        .axis-label {
+            font-size: 14px;
+            font-weight: bold;
+            fill: #333;
+        }
+        .legend-text {
+            font-size: 12px;
+            fill: #333;
+        }
+    </style>
+</head>
+<body>
+    <!-- 可视化控制区：复选框+图表类型下拉菜单 -->
+    <div id="vis-control">
+        <input type="checkbox" class="checkbox" value="visualize" />
+        <label>生成可视化图表</label>
+        <select id="chart-type">
+            <option value="barchart">柱状图（分组）</option>
+            <option value="linechart">折线图</option>
+        </select>
+    </div>
+    <!-- 电子表格容器 -->
+    <div id="xspreadsheet"></div>
+    <!-- 可视化图表容器 -->
+    <div id="my_dataviz"></div>
+
+    <script>
+        // 1. 初始化电子表格：设置中文界面
+        x_spreadsheet.locale("zh-cn");
+        var xs = x_spreadsheet("#xspreadsheet", {
+            mode: 'edit', // 编辑模式（可选read只读模式）
+            showToolbar: true, // 显示工具栏
+            showGrid: true, // 显示网格线
+            showContextmenu: true, // 显示右键菜单
+            // 视图大小配置（自适应文档宽度）
+            view: {
+                height: () => document.documentElement.clientHeight,
+                width: () => document.documentElement.clientWidth,
+            },
+            // 行配置：15行，行高25px
+            row: {
+                len: 15,
+                height: 25,
+            },
+            // 列配置：8列，列宽100px，索引列宽60px
+            col: {
+                len: 8,
+                width: 100,
+                indexWidth: 60,
+                minWidth: 60,
+            },
+            // 默认样式：白色背景、左对齐、默认字体
+            style: {
+                bgcolor: '#ffffff',
+                align: 'left',
+                valign: 'middle',
+                textwrap: false,
+                strike: false,
+                underline: false,
+                color: '#0a0a0a',
+                font: {
+                    name: 'Helvetica',
+                    size: 10,
+                    bold: false,
+                    italic: false,
+                },
+            },
+        });
+
+        // 2. 绑定触发事件：表格编辑、复选框切换、图表类型变更时均更新图表
+        xs.on('cell-edited', updateVisualization);
+        d3.selectAll(".checkbox").on("change", updateVisualization);
+        d3.select("#chart-type").on("change", updateVisualization);
+
+        // 3. 预设表格初始数据（年份-专业-人数）
+        // 第0行（表头）：专业名称
+        xs.cellText(0, 1, "计算机")
+          .cellText(0, 2, "法学")
+          .reRender();
+        // 第1行：2017年数据
+        xs.cellText(1, 0, "2017")
+          .cellText(1, 1, "23")
+          .cellText(1, 2, "15")
+          .reRender();
+        // 第2行：2018年数据
+        xs.cellText(2, 0, "2018")
+          .cellText(2, 1, "36")
+          .cellText(2, 2, "26")
+          .reRender();
+        // 第3行：2019年数据
+        xs.cellText(3, 0, "2019")
+          .cellText(3, 1, "23")
+          .cellText(3, 2, "33")
+          .reRender();
+        // 第4行：2020年数据
+        xs.cellText(4, 0, "2020")
+          .cellText(4, 1, "22")
+          .cellText(4, 2, "10")
+          .reRender();
+
+        // 4. 颜色工具函数：根据索引返回不同颜色（区分系列/类别）
+        function getColor(idx) {
+            var palette = [
+                '#5ab1ef', '#ffb980', '#d87a80', '#2ec7c9', '#b6a2de',
+                '#8d98b3', '#e5cf0d', '#97b552', '#95706d', '#dc69aa'
+            ];
+            return palette[idx % palette.length];
+        }
+
+        // 5. 数据提取与校验函数：复用逻辑，为所有可视化提供统一数据
+        function extractAndValidateData() {
+            var data = [];       // 核心数值数据（二维数组）
+            var yTitle = [];     // y轴/类别标签（年份：2017-2020）
+            var xTitle = [];     // x轴/系列标签（专业：计算机、法学）
+            var rowCount = 0;    // 有效数据行数
+            var colCount = 0;    // 有效数据列数
+
+            // 提取y轴标签（第0列：年份）：从第1行开始，空值停止
+            for (var i = 1; i < 20; i++) {
+                const cell = xs.cell(i, 0);
+                if (cell === null || cell.text === undefined || cell.text === "") {
+                    rowCount = i;
+                    break;
+                }
+                data.push([]);
+                yTitle.push(cell.text);
+            }
+
+            // 提取x轴标签（第0行：专业）：从第1列开始，空值停止
+            for (var i = 1; i < 20; i++) {
+                const cell = xs.cell(0, i);
+                if (cell === null || cell.text === undefined || cell.text === "") {
+                    colCount = i;
+                    break;
+                }
+                xTitle.push(cell.text);
+            }
+
+            // 提取数值数据：校验非数字则终止
+            for (var i = 1; i < rowCount; i++) {
+                for (var j = 1; j < colCount; j++) {
+                    const cell = xs.cell(i, j);
+                    if (cell === null || cell.text === undefined || isNaN(+cell.text)) {
+                        console.log("无效数据：行" + i + "，列" + j);
+                        alert("表格中存在非数字数据，请修正后重试！");
+                        return null; // 数据无效，返回null
+                    }
+                    data[i - 1][j - 1] = +cell.text;
+                }
+            }
+
+            // 数据有效，返回结构化结果
+            return {
+                rawData: data,       // 原始二维数值数组
+                categories: yTitle,  // 类别（年份）
+                series: xTitle,      // 系列（专业）
+                maxValue: d3.max(data.flat()) // 所有数值的最大值（用于轴范围）
+            };
+        }
+
+        // 6. 各类型可视化函数实现
+        // 6.1 分组柱状图（保留原功能，优化适配）
+        function renderBarChart(visData) {
+            const { rawData, categories, series, maxValue } = visData;
+            const margin = { top: 40, right: 60, bottom: 60, left: 60 };
+            const width = 800 - margin.left - margin.right;
+            const height = 500 - margin.top - margin.bottom;
+
+            // 清空旧图表
+            d3.selectAll('svg').remove();
+
+            // 创建svg容器
+            const svg = d3.select("#my_dataviz")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+            // X轴（类别：年份）
+            const xAxis = d3.scaleBand()
+                .domain(categories)
+                .range([0, width])
+                .padding(0.2);
+            svg.append("g")
+                .attr("transform", `translate(0, ${height})`)
+                .call(d3.axisBottom(xAxis).tickSizeOuter(0))
+                .append("text")
+                .attr("class", "axis-label")
+                .attr("x", width / 2)
+                .attr("y", 40)
+                .text("年份");
+
+            // Y轴（数值：人数）
+            const yAxis = d3.scaleLinear()
+                .domain([0, maxValue * 1.1]) // 留10%余量，避免标签超出
+                .range([height, 0])
+                .nice();
+            svg.append("g")
+                .call(d3.axisLeft(yAxis))
+                .append("text")
+                .attr("class", "axis-label")
+                .attr("transform", "rotate(-90)")
+                .attr("x", -height / 2)
+                .attr("y", -40)
+                .text("人数");
+
+            // 子分组X轴（系列：专业）
+            const xSubgroup = d3.scaleBand()
+                .domain(series)
+                .range([0, xAxis.bandwidth()])
+                .padding(0.1);
+
+            // 绘制分组柱子
+            svg.append("g")
+                .selectAll("g")
+                .data(rawData.map((row, idx) => ({ values: row, category: categories[idx] })))
+                .join("g")
+                .attr("transform", d => `translate(${xAxis(d.category)}, 0)`)
+                .selectAll("rect")
+                .data(d => d.values.map((val, idx) => ({ value: val, series: series[idx] })))
+                .join("rect")
+                .attr("x", d => xSubgroup(d.series))
+                .attr("y", d => yAxis(d.value))
+                .attr("width", xSubgroup.bandwidth())
+                .attr("height", d => height - yAxis(d.value))
+                .attr("fill", (d, idx) => getColor(idx));
+
+            // 柱子数值标签
+            svg.append("g")
+                .selectAll("g")
+                .data(rawData.map((row, idx) => ({ values: row, category: categories[idx] })))
+                .join("g")
+                .attr("transform", d => `translate(${xAxis(d.category)}, 0)`)
+                .selectAll("text")
+                .data(d => d.values.map((val, idx) => ({ value: val, series: series[idx] })))
+                .join("text")
+                .attr("x", d => xSubgroup(d.series) + xSubgroup.bandwidth() / 2)
+                .attr("y", d => yAxis(d.value) - 5)
+                .attr("text-anchor", "middle")
+                .attr("font-size", "10px")
+                .text(d => d.value);
+
+            // 图例
+            const legend = svg.append("g")
+                .selectAll("g")
+                .data(series)
+                .join("g")
+                .attr("transform", (d, idx) => `translate(${width - 120}, ${idx * 20})`);
+            // 图例色块
+            legend.append("rect")
+                .attr("width", 15)
+                .attr("height", 15)
+                .attr("fill", (d, idx) => getColor(idx));
+            // 图例文本
+            legend.append("text")
+                .attr("class", "legend-text")
+                .attr("x", 20)
+                .attr("y", 12)
+                .text(d => d);
+        }
+
+        // 6.2 折线图（新增）
+        function renderLineChart(visData) {
+            const { rawData, categories, series, maxValue } = visData;
+            const margin = { top: 40, right: 60, bottom: 60, left: 60 };
+            const width = 800 - margin.left - margin.right;
+            const height = 500 - margin.top - margin.bottom;
+
+            // 清空旧图表
+            d3.selectAll('svg').remove();
+
+            // 创建svg容器
+            const svg = d3.select("#my_dataviz")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+            // X轴（类别：年份，转为序数轴）
+            const xAxis = d3.scaleBand()
+                .domain(categories)
+                .range([0, width]);
+            svg.append("g")
+                .attr("transform", `translate(0, ${height})`)
+                .call(d3.axisBottom(xAxis).tickSizeOuter(0))
+                .append("text")
+                .attr("class", "axis-label")
+                .attr("x", width / 2)
+                .attr("y", 40)
+                .text("年份");
+
+            // Y轴（数值：人数）
+            const yAxis = d3.scaleLinear()
+                .domain([0, maxValue * 1.1])
+                .range([height, 0])
+                .nice();
+            svg.append("g")
+                .call(d3.axisLeft(yAxis))
+                .append("text")
+                .attr("class", "axis-label")
+                .attr("transform", "rotate(-90)")
+                .attr("x", -height / 2)
+                .attr("y", -40)
+                .text("人数");
+
+            // 处理数据：转为折线图需要的格式（每个系列一条线）
+            const lineData = series.map((s, sIdx) => {
+                return categories.map((c, cIdx) => ({
+                    category: c,
+                    series: s,
+                    value: rawData[cIdx][sIdx]
+                }));
+            });
+
+            // 定义线生成器
+            const lineGenerator = d3.line()
+                .x(d => xAxis(d.category) + xAxis.bandwidth() / 2) // 线点在年份中间
+                .y(d => yAxis(d.value))
+                .curve(d3.curveMonotoneX); // 平滑曲线
+
+            // 绘制每条折线
+            svg.append("g")
+                .selectAll("path")
+                .data(lineData)
+                .join("path")
+                .attr("d", d => lineGenerator(d))
+                .attr("fill", "none")
+                .attr("stroke", (d, idx) => getColor(idx))
+                .attr("stroke-width", 2);
+
+            // 绘制数据点
+            svg.append("g")
+                .selectAll("circle")
+                .data(lineData.flat())
+                .join("circle")
+                .attr("cx", d => xAxis(d.category) + xAxis.bandwidth() / 2)
+                .attr("cy", d => yAxis(d.value))
+                .attr("r", 5)
+                .attr("fill", (d, idx) => getColor(series.indexOf(d.series)));
+
+            // 数据点数值标签
+            svg.append("g")
+                .selectAll("text")
+                .data(lineData.flat())
+                .join("text")
+                .attr("x", d => xAxis(d.category) + xAxis.bandwidth() / 2)
+                .attr("y", d => yAxis(d.value) - 10)
+                .attr("text-anchor", "middle")
+                .attr("font-size", "10px")
+                .text(d => d.value);
+
+            // 图例
+            const legend = svg.append("g")
+                .selectAll("g")
+                .data(series)
+                .join("g")
+                .attr("transform", (d, idx) => `translate(${width - 120}, ${idx * 20})`);
+            legend.append("rect")
+                .attr("width", 15)
+                .attr("height", 15)
+                .attr("fill", (d, idx) => getColor(idx));
+            legend.append("text")
+                .attr("class", "legend-text")
+                .attr("x", 20)
+                .attr("y", 12)
+                .text(d => d);
+        }
+
+        // 7. 核心更新函数：根据选择的图表类型调用对应渲染函数
+        function updateVisualization() {
+            const isChecked = d3.select('.checkbox').property("checked");
+            const chartType = d3.select("#chart-type").property("value");
+
+            if (!isChecked) {
+                // 未勾选：清除所有图表
+                d3.selectAll('svg').remove();
+                return;
+            }
+
+            // 提取并校验数据：无效则终止
+            const visData = extractAndValidateData();
+            if (!visData) return;
+
+            // 根据选择的图表类型渲染
+            switch (chartType) {
+                case "barchart":
+                    renderBarChart(visData);
+                    break;
+                case "linechart":
+                    renderLineChart(visData);
+                    break;
+                case "piechart":
+                    renderPieChart(visData);
+                    break;
+                default:
+                    renderBarChart(visData); // 默认渲染柱状图
+            }
+        }
+    </script>
+</body>
+</html>
