@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>X-Spreadsheet 示例</title>
+  <!-- 引入样式 -->
+  <link rel="stylesheet" href="https://unpkg.com/x-data-spreadsheet@1.1.9/dist/xspreadsheet.css">
+  <style>
+    .tooltip {
+      position: absolute; /* 跟随鼠标定位 */
+      padding: 8px 12px;
+      background: rgba(0, 0, 0, 0.8); /* 半透明黑色背景 */
+      color: white; /* 白色文字 */
+      border-radius: 4px; /* 圆角 */
+      pointer-events: none; /* 不遮挡鼠标事件 */
+      font-size: 12px;
+      opacity: 0; /* 初始隐藏 */
+      transition: opacity 0.2s; /* 淡入淡出效果 */
+    }
+  </style>
+</head>
+<body>
+  <!-- 用于承载表格的容器 -->
+  <div id="xspreadsheet" style="width: 800px; height: 600px;"></div>
+
+   <!-- 第二个表格的容器（新增）
+  <div id="x-spreadsheet-demo" style="width: 800px; height: 600px; margin-top: 600px;"></div> -->
+
+  <!-- 新增：图表容器 -->
+  <div id="chart-container" style="width: 800px; height: 400px; margin-top: 600px;"></div>
+
+  <!-- 新增：提示框元素 -->
+  <div class="tooltip"></div>
+
+  <!-- 引入核心脚本 -->
+  <script src="https://unpkg.com/x-data-spreadsheet@1.1.9/dist/xspreadsheet.js"></script>
+  <!-- d3可视化引入 -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  
+  <!-- 初始化表格 -->
+  <script>
+    // 在 id 为 xspreadsheet 的元素上创建表格
+    const spreadsheet = x_spreadsheet('#xspreadsheet',{
+        mode:'edit',//edit | read
+        showToolbar: true,
+        showGrid: true,
+        showContextmenu: true,
+        view: {
+            height: () => document.documentElement.clientHeight,
+            width: () => document.documentElement.clientWidth,
+        },
+        row: {
+            len: 100,
+            height: 25,
+        },
+        col: {
+            len: 26,
+            width: 100,
+            indexWidth: 60,
+            minWidth: 60,
+        },
+        style: {
+            bgcolor: '#ffffff',
+            align: 'left',
+            valign: 'middle',
+            textwrap: false,
+            strike: false,
+            underline: false,
+            color: '#0a0a0a',
+            font: {
+                name: 'Helvetica',
+                size: 10,
+                bold: false,
+                italic: false,
+            },
+        },
+    });
+    //监听图表变化
+    spreadsheet.on('cell-edited',(cell,ri,ci) => {
+        // 新增：打印事件触发信息，查看是否执行
+        console.log("单元格更新触发：", "行", ri+1, "列", String.fromCharCode(65+ci), "内容：", cell?.text);
+        if(ci==0||ci==1){
+            //A列或者B列数据改变时，更新图表
+            setTimeout(updateChart, 10);
+            console.log("已调用 updateChart 更新图表"); // 确认是否进入更新逻辑
+        }
+    })
+
+    // 同时修改获取数据的方法，确保能正确获取数据
+    function gettableData(){
+        const newData = [];
+        
+    
+        // 遍历行数据
+        for(let ri = 0; ri < 20; ri++){
+            try {
+                // 使用 cell 方法获取单元格数据
+                const nameCell = spreadsheet.cell(ri, 0);
+                const valueCell = spreadsheet.cell(ri, 1);
+            
+                const name = nameCell?.text || '';
+                const value = valueCell ? Number(valueCell.text) : null;
+            
+                if(name && value !== null && !isNaN(value)){
+                    newData.push({name, value});
+                }
+            } catch(e) {
+                // 忽略错误，继续处理下一行
+                console.log("处理行", ri, "时出错:", e);
+            }
+        }
+    
+        // 新增：打印提取到的数据，在控制台查看
+        console.log("提取到的数据：", newData); 
+        return newData;
+    }
+
+    spreadsheet.on('cell-selected',(cell,ri,ci) => {
+        console.log('选中单个单元格:');
+        console.log('内容:',cell?.text);// 单元格内容（cell可能为null，用?.避免报错）
+        console.log('位置:行',ri+1,'列',String.fromCharCode(65+ci));
+    });
+    const data = [
+      { name: "A", value: 40 },
+      { name: "B", value: 25 },
+      { name: "C", value: 55 },
+      { name: "D", value: 30 },
+      { name: "E", value: 60 },
+      { name: "F", value: 70 }
+    ];
+
+    data.forEach((item,index) => {
+        const rowIndex = index;
+        //设置A列(ci=0)内容为name
+        spreadsheet.cellText(rowIndex,0,item.name);
+        //设置B列(ci=1)内容为value,转为字符串，单元格内容是文本
+        spreadsheet.cellText(rowIndex,1,item.value.toString());
+    })
+
+    spreadsheet.reRender();
+    let xScale,yScale,xAxis,yAxis;
+    let chartHeight;
+    const tooltip = d3.select(".tooltip");
+    const margin = { top:20, right:20, bottom:30, left:40};
+    
+    function initChart(){
+        
+        const width = 600 - margin.left - margin.right;
+        chartHeight = 400 - margin.top - margin.bottom;
+        const svg = d3.select("#chart-container")
+            .append("svg")
+                .attr("width",width + margin.left + margin.right)
+                .attr("height", chartHeight + margin.top + margin.bottom)
+            .append("g")
+                .attr("transform",`translate(${margin.left}, ${margin.top})`);
+
+        xScale = d3.scaleBand()
+            .range([0,width])
+            .padding(0.2);
+
+        yScale = d3.scaleLinear()
+            .range([chartHeight,0]);
+
+        xAxis = svg.append("g")
+            .attr("transform",`translate(0,${chartHeight})`);
+
+        yAxis = svg.append("g");
+
+        window.chartSvg = svg;
+    }
+    
+    function updateChart(){
+        const newData = gettableData();
+        if(newData.length==0){
+            return ;
+        }
+        // 更新y轴比例尺定义域（包含所有数据，避免超出范围）
+        const minValue = d3.min(newData, d => d.value);
+        const maxValue = d3.max(newData, d => d.value);
+        // 打印x轴定义域
+        //console.log("x轴定义域:", newData.map(d => d.name)); 
+        xScale.domain(newData.map(d => d.name)); // 关键：为每个name分配位置
+
+        yScale.domain([Math.min(0, minValue), maxValue]); // 确保包含0和最小值（处理负数）
+
+        const bars = window.chartSvg.selectAll("rect")
+            .data(newData, d => d.name);
+        
+        bars.enter()
+            .append("rect")
+                .attr("fill","steelblue")
+                .attr("x", d => xScale(d.name))
+                .attr("width", xScale.bandwidth())
+                // 继承鼠标事件（悬停高亮和提示框）
+            .on("mouseover", function(event, d) {
+                tooltip.html(`数值:${d.value}`)
+                    .style("opacity", 1)
+                    .style("left", (event.pageX + 10) + "px")
+                    .style("top", (event.pageY - 20) + "px");
+                d3.select(this).attr("fill", "orange");
+            })
+            .on("mouseout", function() {
+                tooltip.style("opacity", 0);
+                d3.select(this).attr("fill", "steelblue");
+            })
+            // 合并新增和已存在的柱子，更新位置和高度
+        .merge(bars)
+            .attr("x", d => xScale(d.name))
+            .attr("width", xScale.bandwidth())
+            .attr("y", d => yScale(d.value))
+            .attr("height", d => {
+                    const height = chartHeight - yScale(d.value); // 正确公式：绘图高度 - 柱子顶部y坐标
+                    return Math.max(0, height); // 确保非负
+                });
+
+        bars.exit().remove();
+        xAxis.call(d3.axisBottom(xScale));
+        yAxis.call(d3.axisLeft(yScale));
+
+        }
+        
+        initChart();
+        updateChart();
+    
+    // const s = x_spreadsheet("#x-spreadsheet-demo")
+    // spreadsheet.cellText(5, 5, 'xxxx').cellText(6, 5, 'yyy').reRender();
+    // // cell(ri, ci, sheetIndex = 0)
+    // spreadsheet.cell(5, 5);
+    // // cellStyle(ri, ci, sheetIndex = 0)
+    // console.log('单元格内容:',spreadsheet.cell(5,5).text);
+
+    // const cellStyle=spreadsheet.cellStyle(6, 5);
+    // console.log('单元格背景色:',cellStyle?.bgcolor);
+    // console.log('字体大小:',cellStyle?.font.size);
+  </script>
+</body>
+</html>
