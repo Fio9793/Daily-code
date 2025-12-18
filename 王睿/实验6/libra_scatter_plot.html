@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Libra 交互式散点图</title>
+    <style>
+        /* 页面和容器样式 */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        .container {
+            max-width: 900px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #007bff;
+            text-align: center;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 20px;
+        }
+        #visualization {
+            /* 确保 SVG 容器能居中显示 */
+            display: block;
+        }
+        .info-panel {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
+        .info-panel strong {
+            color: #007bff;
+        }
+        
+        /* Tooltip 样式 - 对应步骤 7 */
+        .tooltip {
+            opacity: 0; /* 初始不可见 */
+            position: absolute; /* 绝对定位 */
+            background: rgba(0, 0, 0, 0.9); /* 背景色 */
+            color: white; /* 文字颜色 */
+            padding: 10px; /* 内边距 */
+            border-radius: 5px; /* 圆角 */
+            pointer-events: none; /* 忽略鼠标事件 */
+            font-size: 12px; /* 字体大小 */
+            z-index: 1000; /* 层级 */
+            box-shadow: 2px 2px 10px rgba(0,0,0,0.3); /* 阴影 */
+        }
+
+        /* D3 散点样式 */
+        .axis path,
+        .axis line {
+            fill: none;
+            stroke: #000;
+            shape-rendering: crispEdges;
+        }
+        .axis text {
+            font-size: 11px;
+        }
+        .mark {
+            cursor: pointer; /* 数据点可点击 */
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>散点图可视化</h1>
+        <p class="subtitle">Libra 交互式可视化</p>
+        <div id="visualization"></div>
+        <div class="info-panel">
+            <h3>交互说明</h3>
+            <ul>
+                <li><strong>悬停</strong>: 显示数据点详细信息</li>
+                <li><strong>点击</strong>: 高亮同类别所有数据点</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+
+    <script type="module">
+        // 定义全局变量和常量
+        globalThis.WIDTH = 800;
+        globalThis.HEIGHT = 500;
+        globalThis.MARGIN = { top: 30, right: 30, bottom: 60, left: 60 };
+
+        globalThis.FIELD_X = 'x';
+        globalThis.FIELD_Y = 'y';
+        globalThis.FIELD_COLOR = 'category';
+        globalThis.FIELD_LABEL = 'label';
+        
+        // 颜色比例尺（为 4 个类别定义颜色）
+        globalThis.color = d3.scaleOrdinal()
+            .domain(['A', 'B', 'C', 'D'])
+            .range(['#e41a1c', '#377eb8', '#4daf4a', '#984ea3']);
+        
+        // x/y 比例尺
+        globalThis.x = null;
+        globalThis.y = null;
+        globalThis.data = [];
+
+        /**
+         * 1. 动态加载 Libra 库
+         */
+        const libraPaths = [
+            'https://cdn.jsdelivr.net/gh/Ideas-Laboratory/Libra@main/dist/libra.min.js',
+            'https://cdn.jsdelivr.net/gh/Ideas-Laboratory/Libra@main/dist/libra.js'
+        ];
+        let currentIndex = 0;
+        
+        async function loadLibra() {
+            if (currentIndex >= libraPaths.length) {
+                console.error('Libra 库加载失败!');
+                window.libraLoaded = false;
+                window.dispatchEvent(new Event('libraLoadComplete'));
+                return;
+            }
+
+            try {
+                // 动态 import 库，并导出到全局对象 window.Libra
+                const module = await import(libraPaths[currentIndex]);
+                // 尝试多种可能的导出方式
+                window.Libra = module.Libra || module.default || module;
+                window.libraLoaded = true;
+                window.dispatchEvent(new Event('libraLoadComplete'));
+                console.log(`Libra 库成功加载: ${libraPaths[currentIndex]}`);
+                console.log("Libra 对象结构:", Object.keys(window.Libra || {}));
+                console.log("Libra.Layer 是否存在:", typeof window.Libra?.Layer);
+            } catch (error) {
+                console.warn(`加载 ${libraPaths[currentIndex]} 失败, 尝试加载下一个...`, error);
+                currentIndex++;
+                await loadLibra(); // 尝试下一个路径
+            }
+        }
+
+        /**
+         * 2. 生成示例数据
+         */
+        function generateSampleData() {
+            const categories = ['A', 'B', 'C', 'D'];
+            const data = [];
+            categories.forEach((category, catIdx) => {
+                for (let i = 0; i < 30; i++) {
+                    // 为每个类别生成不同分布的数据点
+                    const basex = catIdx * 200 + 100;
+                    const basey = 100 + catIdx * 100;
+                    data.push({
+                        x: basex + (Math.random() - 0.5) * 150,
+                        y: basey + (Math.random() - 0.5) * 150,
+                        category: category,
+                        label: `${category}-${i + 1}`,
+                        value: Math.floor(Math.random() * 100),
+                        description: `这是类别 ${category} 的第${i + 1}个数据点,值为${Math.floor(Math.random() * 100)}`,
+                    });
+                }
+            });
+            return data;
+        }
+
+        /**
+         * 3. 实现静态可视化 (坐标轴)
+         */
+        function renderStaticVisualization() {
+            // 定义比例尺
+            globalThis.x = d3.scaleLinear()
+                .domain(d3.extent(globalThis.data, d => d[globalThis.FIELD_X]))
+                .range([0, globalThis.WIDTH - globalThis.MARGIN.left - globalThis.MARGIN.right]);
+
+            globalThis.y = d3.scaleLinear()
+                .domain(d3.extent(globalThis.data, d => d[globalThis.FIELD_Y]))
+                .range([globalThis.HEIGHT - globalThis.MARGIN.top - globalThis.MARGIN.bottom, 0]);
+
+
+            const svg = d3.select("#visualization")
+                .append("svg")
+                .attr("width", globalThis.WIDTH)
+                .attr("height", globalThis.HEIGHT)
+                .style("display", "block")
+                .style("margin", "auto");
+
+            // 创建主图形容器
+            const g = svg.append("g")
+                .attr("transform", `translate(${globalThis.MARGIN.left}, ${globalThis.MARGIN.top})`)
+                .attr("class", "main-group");
+
+            const innerHeight = globalThis.HEIGHT - globalThis.MARGIN.top - globalThis.MARGIN.bottom;
+
+            // 添加 x 轴
+            g.append("g")
+                .attr("transform", `translate(0, ${innerHeight})`)
+                .call(d3.axisBottom(globalThis.x))
+                .append("text")
+                .attr("x", (globalThis.WIDTH - globalThis.MARGIN.left - globalThis.MARGIN.right) / 2)
+                .attr("y", 40)
+                .attr("fill", "black")
+                .style("text-anchor", "middle")
+                .text("X坐标");
+
+            // 添加 y 轴
+            g.append("g")
+                .call(d3.axisLeft(globalThis.y))
+                .append("text")
+                .attr("transform", "rotate(-90)")
+                .attr("y", -40)
+                .attr("x", -(innerHeight / 2))
+                .attr("dy", "1em")
+                .attr("fill", "black")
+                .style("text-anchor", "middle")
+                .text("Y坐标");
+
+            // 补全简单图例
+            const legend = svg.append("g")
+                .attr("class", "legend")
+                .attr("transform", `translate(${globalThis.WIDTH - 100}, ${globalThis.HEIGHT - 100})`);
+
+            globalThis.color.domain().forEach((d, i) => {
+                const legendRow = legend.append("g")
+                    .attr("transform", `translate(0, ${i * 20})`);
+                
+                legendRow.append("rect")
+                    .attr("width", 10)
+                    .attr("height", 10)
+                    .attr("fill", globalThis.color(d));
+
+                legendRow.append("text")
+                    .attr("x", 15)
+                    .attr("y", 9)
+                    .attr("text-anchor", "start")
+                    .style("font-size", "12px")
+                    .text(d);
+            });
+        }
+
+        /**
+         * 4. 创建 Libra 图层并绘制数据点
+         */
+        function renderMainVisualization() {
+            const svg = d3.select("#visualization svg");
+            const g = d3.select("#visualization svg .main-group");
+            
+            // 尝试创建 Libra Layer（如果可用）
+            let mainLayer = null;
+            let targetG = g; // 默认使用主容器
+            
+            if (window.Libra && window.Libra.Layer) {
+                try {
+                    mainLayer = window.Libra.Layer.initialize("D3Layer", {
+                        name: "mainLayer",
+                        width: globalThis.WIDTH - globalThis.MARGIN.left - globalThis.MARGIN.right,
+                        height: globalThis.HEIGHT - globalThis.MARGIN.top - globalThis.MARGIN.bottom,
+                        offset: { x: globalThis.MARGIN.left, y: globalThis.MARGIN.top },
+                        container: svg.node(),
+                    });
+                    
+                    const layerGraphic = mainLayer.getGraphic();
+                    if (layerGraphic) {
+                        targetG = d3.select(layerGraphic);
+                        console.log("Libra Layer 创建成功，使用 Layer 图形容器");
+                    } else {
+                        console.warn("Libra Layer 图形容器不存在，使用主容器");
+                    }
+                } catch (error) {
+                    console.warn("创建 Libra Layer 失败:", error);
+                }
+            } else {
+                console.warn("Libra.Layer 不可用，将使用基础可视化");
+            }
+            
+            // 在目标容器中绘制数据点
+            targetG.selectAll("circle.mark")
+                .data(globalThis.data)
+                .join("circle")
+                .attr("class", "mark")
+                .attr("cx", (d) => globalThis.x(d[globalThis.FIELD_X]))
+                .attr("cy", (d) => globalThis.y(d[globalThis.FIELD_Y]))
+                .attr("fill", "lightgray")
+                .attr("fill-opacity", 0.7) 
+                .attr("stroke", (d) => globalThis.color(d[globalThis.FIELD_COLOR]))
+                .attr("stroke-width", 1.5)
+                .attr("r", 5);
+            
+            console.log("数据点已绘制到容器:", targetG.node() === g.node() ? "主容器" : "Libra Layer 容器");
+
+            return mainLayer;
+        }
+
+        /**
+         * 5. 实现点击高亮交互 (Libra)
+         */
+        async function mountInteraction(layer) {
+            if (!layer || !window.Libra || !window.Libra.Interaction) {
+                console.warn("Libra 交互功能不可用，跳过点击高亮功能");
+                return;
+            }
+            
+            try {
+                // 确保数据点绑定到 Libra Layer
+                const layerGraphic = layer.getGraphic();
+                if (!layerGraphic) {
+                    console.warn("Libra Layer 图形容器不存在，交互功能可能无法使用");
+                    return;
+                }
+
+                // 获取数据点并确保它们有正确的数据绑定
+                const g = d3.select(layerGraphic);
+                const circles = g.selectAll("circle.mark");
+                const circleCount = circles.size();
+                console.log("Libra Layer 中的数据点数量:", circleCount);
+                
+                if (circleCount === 0) {
+                    console.warn("Libra Layer 中没有数据点，交互功能可能无法工作");
+                    // 尝试从主容器移动数据点到 Libra Layer
+                    const mainG = d3.select("#visualization svg .main-group");
+                    mainG.selectAll("circle.mark").each(function() {
+                        layerGraphic.appendChild(this);
+                    });
+                    console.log("已将数据点移动到 Libra Layer，新数量:", d3.select(layerGraphic).selectAll("circle.mark").size());
+                }
+                
+                // 重新绑定数据以确保 Libra 可以识别
+                g.selectAll("circle.mark").data(globalThis.data);
+                
+                // 点击高亮功能
+                window.Libra.Interaction.build({
+                    inherit: "ClickInstrument",
+                    layers: [layer],
+                    
+                    // 插入过滤和选择转换器
+                    insert: [
+                        {
+                            find: "SelectionService",
+                            flow: [
+                                {
+                                    comp: "FilterService",
+                                    sharedVar: {
+                                        fields: [globalThis.FIELD_COLOR],
+                                    },
+                                },
+                                {
+                                    comp: "Selection Transformer",
+                                    layer: layer.getLayerFromQueue("selectionLayer"),
+                                },
+                            ],
+                        },
+                    ],
+                    // 定义高亮颜色
+                    sharedVar: {
+                        highlightColor: (d) => globalThis.color(d[globalThis.FIELD_COLOR]),
+                    },
+                });
+                
+                console.log("Libra 交互功能已成功挂载");
+            } catch (error) {
+                console.error("挂载 Libra 交互功能时出错:", error);
+                console.error("错误详情:", error.stack);
+            }
+        }
+
+        /**
+         * 5.5. 使用 D3.js 实现点击高亮（备用方案）
+         */
+        function mountClickHighlight() {
+            const g = d3.select("#visualization svg .main-group");
+            const circles = g.selectAll("circle.mark");
+            
+            circles.on("click", function(event, d) {
+                // 获取点击的数据点类别
+                const clickedCategory = d[globalThis.FIELD_COLOR];
+                
+                // 重置所有数据点的样式
+                circles
+                    .attr("fill-opacity", 0.7)
+                    .attr("r", 5);
+                
+                // 高亮同类别数据点
+                circles.filter(d => d[globalThis.FIELD_COLOR] === clickedCategory)
+                    .attr("fill-opacity", 1)
+                    .attr("r", 7)
+                    .attr("fill", (d) => globalThis.color(d[globalThis.FIELD_COLOR]));
+                
+                console.log(`点击了类别 ${clickedCategory}，已高亮所有 ${clickedCategory} 类别的数据点`);
+            });
+            
+            console.log("D3.js 点击高亮功能已挂载");
+        }
+
+        /**
+         * 6. 实现悬停提示交互 (D3.js)
+         */
+        function mountTooltip(layer) {
+            // 悬停展示信息功能 使用 D3 实现 tooltip
+            const tooltip = d3.select("body")
+                .append("div")
+                .attr("class", "tooltip")
+                .style("opacity", 0) 
+                .style("position", "absolute")
+                .style("background", "rgba(0, 0, 0, 0.9)")
+                .style("color", "white")
+                .style("padding", "10px")
+                .style("border-radius", "5px")
+                .style("pointer-events", "none")
+                .style("font-size", "12px")
+                .style("z-index", "1000")
+                .style("box-shadow", "2px 2px 10px rgba(0,0,0,0.3)");
+
+            // 获取数据点所在的容器（Libra Layer 的图形容器或主容器）
+            // 优先从所有容器中查找数据点
+            let circles;
+            if (layer && layer.getGraphic) {
+                const layerGraphic = layer.getGraphic();
+                if (layerGraphic) {
+                    circles = d3.select(layerGraphic).selectAll("circle.mark");
+                    if (circles.size() === 0) {
+                        // 如果 Libra Layer 中没有数据点，从主容器查找
+                        circles = d3.select("#visualization svg .main-group").selectAll("circle.mark");
+                    }
+                } else {
+                    circles = d3.select("#visualization svg .main-group").selectAll("circle.mark");
+                }
+            } else {
+                circles = d3.select("#visualization svg .main-group").selectAll("circle.mark");
+            }
+            
+            // 如果还是找不到，从整个 SVG 中查找
+            if (circles.size() === 0) {
+                circles = d3.selectAll("#visualization circle.mark");
+            }
+            
+            circles
+                .on("mouseover", function(event, d) {
+                    tooltip.transition()
+                        .duration(200) 
+                        .style("opacity", 0.9);
+
+                    // 填充 Tooltip 内容
+                    tooltip.html(`
+                        <div style="line-height: 1.6;">
+                            <strong>标签:</strong> ${d[globalThis.FIELD_LABEL]}<br/>
+                            <strong>类别:</strong> ${d[globalThis.FIELD_COLOR]}<br/>
+                            <strong>X值:</strong> ${d[globalThis.FIELD_X].toFixed(2)}<br/>
+                            <strong>Y值:</strong> ${d[globalThis.FIELD_Y].toFixed(2)}<br/>
+                            <strong>数值:</strong> ${d.value}
+                        </div>
+                    `)
+                    .style("left", (event.pageX + 10) + "px")
+                    .style("top", (event.pageY - 10) + "px");
+                })
+                .on("mousemove", function(event) {
+                    // 悬停时跟随鼠标移动
+                    tooltip
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 10) + "px");
+                })
+                .on("mouseout", function() {
+                    // 鼠标移出时隐藏
+                    tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                });
+            
+            console.log("Tooltip 功能已挂载，数据点数量:", circles.size());
+        }
+
+        /**
+         * 7. 主程序入口
+         */
+        async function main() {
+            globalThis.data = generateSampleData();
+            console.log("生成的数据点数量:", globalThis.data.length);
+            renderStaticVisualization();
+            
+            // 等待 Libra 库加载完成再执行交互逻辑
+            if (!window.libraLoaded) {
+                console.log("等待 Libra 库加载...");
+                await new Promise(resolve => window.addEventListener('libraLoadComplete', resolve, { once: true }));
+            }
+
+            // 无论 Libra 是否加载成功，都绘制数据点
+            const mainLayer = renderMainVisualization();
+            console.log("数据点已绘制，检查 SVG 中的 circle 元素数量:", d3.selectAll("#visualization circle.mark").size());
+            
+            if (window.libraLoaded && mainLayer) {
+                const layerGraphic = mainLayer.getGraphic();
+                console.log("Libra Layer 图形容器:", layerGraphic);
+                if (layerGraphic) {
+                    const circlesInLayer = d3.select(layerGraphic).selectAll("circle.mark").size();
+                    console.log("Libra Layer 中的数据点数量:", circlesInLayer);
+                }
+                await mountInteraction(mainLayer); // 挂载点击高亮交互 (Libra)
+            } else {
+                console.warn("Libra 未加载或 Layer 创建失败，使用 D3.js 实现点击高亮功能");
+                mountClickHighlight(); // 使用 D3.js 实现点击高亮
+            }
+            
+            // Tooltip 功能始终可用（使用 D3.js）
+            mountTooltip(mainLayer);
+            
+            if (!window.libraLoaded) {
+                console.error("Libra 库加载失败，交互功能将无法使用。");
+                // 即使 Libra 加载失败，也绘制数据点
+                const g = d3.select("#visualization svg .main-group");
+                g.selectAll("circle.mark")
+                    .data(globalThis.data)
+                    .join("circle")
+                    .attr("class", "mark")
+                    .attr("cx", (d) => globalThis.x(d[globalThis.FIELD_X]))
+                    .attr("cy", (d) => globalThis.y(d[globalThis.FIELD_Y]))
+                    .attr("fill", "lightgray")
+                    .attr("fill-opacity", 0.7) 
+                    .attr("stroke", (d) => globalThis.color(d[globalThis.FIELD_COLOR]))
+                    .attr("stroke-width", 1.5)
+                    .attr("r", 5);
+                console.log("Libra 加载失败，使用备用方案绘制数据点，circle 元素数量:", d3.selectAll("#visualization circle").size());
+            }
+        }
+
+        // 启动程序：先尝试加载 Libra 库
+        loadLibra().then(() => main());
+
+    </script>
+</body>
+</html>
