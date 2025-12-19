@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canis分组动画：国家GDP数据可视化</title>
+    <script src="https://unpkg.com/@canisjs/canis@1.0.0/dist/canis.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+        
+        body {
+            background-color: #f0f2f5;
+            color: #333;
+            padding: 20px;
+            line-height: 1.5;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+        }
+        
+        header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 5px;
+        }
+        
+        .subtitle {
+            font-size: 1rem;
+            opacity: 0.8;
+        }
+        
+        .content {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .control-panel {
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #eaeaea;
+        }
+        
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .control-group {
+            flex: 1;
+            min-width: 200px;
+        }
+        
+        .control-group h3 {
+            font-size: 1rem;
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+        
+        .slider-container {
+            margin-bottom: 10px;
+        }
+        
+        .slider-container label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+        }
+        
+        .value-display {
+            text-align: right;
+            font-size: 0.9rem;
+            color: #2c3e50;
+            font-weight: bold;
+        }
+        
+        .buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        button {
+            padding: 8px 15px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        
+        button:hover {
+            background-color: #2980b9;
+        }
+        
+        button.reset {
+            background-color: #e74c3c;
+        }
+        
+        button.reset:hover {
+            background-color: #c0392b;
+        }
+        
+        .visualization-panel {
+            padding: 20px;
+        }
+        
+        .visualization-area {
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            min-height: 400px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .code-block {
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 15px;
+            overflow-x: auto;
+            font-family: monospace;
+            font-size: 0.85rem;
+            line-height: 1.4;
+        }
+        
+        .explanation {
+            background-color: #e8f4fc;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 20px;
+            font-size: 0.9rem;
+        }
+        
+        .explanation h3 {
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+        
+        .legend {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
+        }
+        
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+        }
+        
+        .animation-indicator {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(46, 204, 113, 0.9);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            display: none;
+        }
+        
+        footer {
+            text-align: center;
+            padding: 15px;
+            color: #7f8c8d;
+            font-size: 0.85rem;
+            border-top: 1px solid #eaeaea;
+        }
+        
+        .country-bar {
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            opacity: 0;
+            transition: opacity 0.6s ease;
+        }
+        
+        .country-name {
+            width: 120px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .bar-container {
+            flex: 1;
+            height: 30px;
+            background-color: #ecf0f1;
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .bar {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 1s ease;
+        }
+        
+        .gdp-value {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .year-title {
+            font-size: 1.2rem;
+            color: #2c3e50;
+            margin: 20px 0 10px;
+            padding-bottom: 5px;
+            border-bottom: 2px solid #3498db;
+        }
+        
+        @media (max-width: 768px) {
+            .controls {
+                flex-direction: column;
+            }
+            
+            .control-group {
+                min-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Canis分组动画：国家GDP数据</h1>
+            <p class="subtitle">演示按年份分组，逐个显示国家GDP数据</p>
+        </header>
+        
+        <div class="content">
+            <div class="control-panel">
+                <h3>动画控制参数</h3>
+                <div class="controls">
+                    <div class="control-group">
+                        <div class="slider-container">
+                            <label>年份组间延迟: <span id="yearDelayValue">1000</span>ms</label>
+                            <input type="range" id="yearDelaySlider" min="300" max="2000" value="1000" step="100">
+                        </div>
+                        
+                        <div class="slider-container">
+                            <label>国家间延迟: <span id="countryDelayValue">400</span>ms</label>
+                            <input type="range" id="countryDelaySlider" min="100" max="1000" value="400" step="100">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <div class="slider-container">
+                            <label>动画持续时间: <span id="durationValue">600</span>ms</label>
+                            <input type="range" id="durationSlider" min="200" max="1500" value="600" step="100">
+                        </div>
+                        
+                        <div class="slider-container">
+                            <label>动画速度: <span id="speedValue">1.0</span>x</label>
+                            <input type="range" id="speedSlider" min="0.25" max="2" value="1" step="0.25">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="buttons">
+                    <button id="startBtn">开始动画</button>
+                    <button id="resetBtn" class="reset">重置</button>
+                    <button id="stepBtn">单步演示</button>
+                </div>
+                
+                <div class="animation-indicator" id="animationIndicator">
+                    动画播放中...
+                </div>
+            </div>
+            
+            <div class="visualization-panel">
+                <h3>国家GDP数据可视化 (单位: 十亿美元)</h3>
+                <div class="visualization-area" id="visualizationArea">
+                    <!-- 可视化内容将通过JavaScript动态生成 -->
+                    <div class="legend">
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #3498db;"></div>
+                            <span>2019年</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #2ecc71;"></div>
+                            <span>2020年</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #e74c3c;"></div>
+                            <span>2021年</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="code-block">
+{
+  "constants": [
+    {
+      "name": "durationTime",
+      "value": <span id="durationCode">600</span>
+    }
+  ],
+  "animations": [
+    {
+      "selector": ".country-bar",
+      "grouping": {
+        "reference": "start after previous",
+        "groupBy": "year",
+        "delay": <span id="yearDelayCode">1000</span>,
+        "grouping": {
+          "groupBy": "country",
+          "delay": <span id="countryDelayCode">400</span>
+        }
+      },
+      "effects": [
+        {
+          "type": "fade",
+          "duration": "durationTime"
+        }
+      ]
+    }
+  ]
+}
+                </div>
+                
+                <div class="explanation">
+                    <h3>动画逻辑说明</h3>
+                    <p>此示例演示了Canis的分组动画功能：</p>
+                    <ol>
+                        <li><strong>外层分组 (年份)</strong>: 将数据按年份(2019, 2020, 2021)分组，设置年份组间的延迟时间</li>
+                        <li><strong>内层分组 (国家)</strong>: 在每个年份组内，再按国家分组，设置国家间的延迟时间</li>
+                        <li><strong>动画效果</strong>: 每个国家数据条以淡入效果显示，持续时间由全局常量控制</li>
+                    </ol>
+                    <p>调整上方滑块可实时观察不同参数对动画时序的影响。</p>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>Canis分组动画可视化示例 - 国家GDP数据 | 使用Canis动画引擎原理</p>
+        </footer>
+    </div>
+
+    <script>
+        // 国家GDP数据 (单位: 十亿美元)
+        const gdpData = [
+            { country: "美国", year: "2019", gdp: 21433, color: "#3498db" },
+            { country: "中国", year: "2019", gdp: 14343, color: "#3498db" },
+            { country: "日本", year: "2019", gdp: 5082, color: "#3498db" },
+            { country: "德国", year: "2019", gdp: 3846, color: "#3498db" },
+            { country: "英国", year: "2019", gdp: 2827, color: "#3498db" },
+            { country: "法国", year: "2019", gdp: 2716, color: "#3498db" },
+            
+            { country: "美国", year: "2020", gdp: 20937, color: "#2ecc71" },
+            { country: "中国", year: "2020", gdp: 14723, color: "#2ecc71" },
+            { country: "日本", year: "2020", gdp: 5049, color: "#2ecc71" },
+            { country: "德国", year: "2020", gdp: 3806, color: "#2ecc71" },
+            { country: "英国", year: "2020", gdp: 2708, color: "#2ecc71" },
+            { country: "法国", year: "2020", gdp: 2599, color: "#2ecc71" },
+            
+            { country: "美国", year: "2021", gdp: 22996, color: "#e74c3c" },
+            { country: "中国", year: "2021", gdp: 17734, color: "#e74c3c" },
+            { country: "日本", year: "2021", gdp: 4939, color: "#e74c3c" },
+            { country: "德国", year: "2021", gdp: 4223, color: "#e74c3c" },
+            { country: "英国", year: "2021", gdp: 3187, color: "#e74c3c" },
+            { country: "法国", year: "2021", gdp: 2937, color: "#e74c3c" }
+        ];
+        
+        // 初始化变量
+        let animationInProgress = false;
+        let animationSpeed = 1.0;
+        let currentStep = 0;
+        let totalSteps = 0;
+        
+        // 获取DOM元素
+        const visualizationArea = document.getElementById('visualizationArea');
+        const yearDelaySlider = document.getElementById('yearDelaySlider');
+        const countryDelaySlider = document.getElementById('countryDelaySlider');
+        const durationSlider = document.getElementById('durationSlider');
+        const speedSlider = document.getElementById('speedSlider');
+        const startBtn = document.getElementById('startBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const stepBtn = document.getElementById('stepBtn');
+        const animationIndicator = document.getElementById('animationIndicator');
+        
+        // 获取显示值的元素
+        const yearDelayValue = document.getElementById('yearDelayValue');
+        const countryDelayValue = document.getElementById('countryDelayValue');
+        const durationValue = document.getElementById('durationValue');
+        const speedValue = document.getElementById('speedValue');
+        
+        // 获取代码块中的元素
+        const yearDelayCode = document.getElementById('yearDelayCode');
+        const countryDelayCode = document.getElementById('countryDelayCode');
+        const durationCode = document.getElementById('durationCode');
+        
+        // 创建可视化元素
+        const createVisualization = () => {
+            visualizationArea.innerHTML = '';
+            
+            // 添加图例
+            const legend = document.createElement('div');
+            legend.className = 'legend';
+            legend.innerHTML = `
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #3498db;"></div>
+                    <span>2019年</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #2ecc71;"></div>
+                    <span>2020年</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #e74c3c;"></div>
+                    <span>2021年</span>
+                </div>
+            `;
+            visualizationArea.appendChild(legend);
+            
+            // 获取所有年份
+            const years = [...new Set(gdpData.map(item => item.year))];
+            
+            // 创建每年的数据区域
+            years.forEach(year => {
+                // 创建年份标题
+                const yearTitle = document.createElement('div');
+                yearTitle.className = 'year-title';
+                yearTitle.textContent = `${year}年GDP数据`;
+                yearTitle.id = `year-${year}`;
+                visualizationArea.appendChild(yearTitle);
+                
+                // 获取当前年份的数据
+                const yearData = gdpData.filter(item => item.year === year);
+                
+                // 按国家字母顺序排序
+                yearData.sort((a, b) => a.country.localeCompare(b.country));
+                
+                // 创建每个国家的数据条
+                yearData.forEach(item => {
+                    // 计算条形的最大宽度（以最大GDP值为基准）
+                    const maxGdp = Math.max(...gdpData.map(d => d.gdp));
+                    const barWidthPercentage = (item.gdp / maxGdp) * 90 + 10;
+                    
+                    const barContainer = document.createElement('div');
+                    barContainer.className = 'country-bar';
+                    barContainer.setAttribute('data-year', item.year);
+                    barContainer.setAttribute('data-country', item.country);
+                    
+                    barContainer.innerHTML = `
+                        <div class="country-name">${item.country}</div>
+                        <div class="bar-container">
+                            <div class="bar" style="width: 0%; background-color: ${item.color};"></div>
+                            <div class="gdp-value">${item.gdp.toLocaleString()}</div>
+                        </div>
+                    `;
+                    
+                    visualizationArea.appendChild(barContainer);
+                    
+                    // 保存条形宽度信息到元素上
+                    barContainer.querySelector('.bar').setAttribute('data-target-width', barWidthPercentage);
+                });
+            });
+            
+            return gdpData;
+        };
+        
+        // 初始化可视化
+        createVisualization();
+        
+        // 模拟Canis动画逻辑
+        const runAnimation = () => {
+            if (animationInProgress) return;
+            
+            animationInProgress = true;
+            animationIndicator.style.display = 'block';
+            startBtn.disabled = true;
+            stepBtn.disabled = true;
+            
+            // 获取当前参数值
+            const yearDelay = parseInt(yearDelaySlider.value);
+            const countryDelay = parseInt(countryDelaySlider.value);
+            const durationTime = parseInt(durationSlider.value);
+            
+            // 更新显示值
+            updateDisplayValues();
+            
+            // 重置所有元素为透明
+            document.querySelectorAll('.country-bar').forEach(bar => {
+                bar.style.opacity = '0';
+                bar.querySelector('.bar').style.width = '0%';
+            });
+            
+            // 获取所有国家数据条
+            const countryBars = Array.from(document.querySelectorAll('.country-bar'));
+            
+            // 按year分组
+            const yearGroups = {};
+            countryBars.forEach(bar => {
+                const year = bar.getAttribute('data-year');
+                if (!yearGroups[year]) {
+                    yearGroups[year] = [];
+                }
+                yearGroups[year].push(bar);
+            });
+            
+            // 对year进行排序：2019, 2020, 2021
+            const sortedYears = Object.keys(yearGroups).sort();
+            
+            // 计算动画时间
+            let currentTime = 0;
+            currentStep = 0;
+            totalSteps = sortedYears.reduce((total, year) => total + yearGroups[year].length, 0);
+            
+            // 外层分组动画：按year顺序
+            sortedYears.forEach((year, yearIndex) => {
+                // 如果不是第一个year，添加年份组间延迟
+                if (yearIndex > 0) {
+                    currentTime += yearDelay;
+                }
+                
+                // 获取当前年份组内的所有元素
+                const yearGroup = yearGroups[year];
+                
+                // 内层分组动画：按国家顺序
+                yearGroup.forEach((bar, countryIndex) => {
+                    // 如果不是第一个国家，添加国家间延迟
+                    if (countryIndex > 0) {
+                        currentTime += countryDelay;
+                    }
+                    
+                    // 显示当前国家数据条
+                    setTimeout(() => {
+                        bar.style.opacity = '1';
+                        bar.style.transition = `opacity ${durationTime}ms ease`;
+                        
+                        // 同时动画显示条形宽度
+                        const barElement = bar.querySelector('.bar');
+                        const targetWidth = barElement.getAttribute('data-target-width');
+                        barElement.style.transition = `width ${durationTime}ms ease`;
+                        barElement.style.width = `${targetWidth}%`;
+                        
+                        // 更新步骤计数器
+                        currentStep++;
+                        
+                        // 高亮当前年份标题
+                        const yearTitle = document.getElementById(`year-${year}`);
+                        if (yearTitle) {
+                            yearTitle.style.color = '#e74c3c';
+                            yearTitle.style.fontWeight = 'bold';
+                            
+                            // 移除之前的高亮
+                            setTimeout(() => {
+                                yearTitle.style.color = '#2c3e50';
+                                yearTitle.style.fontWeight = 'normal';
+                            }, durationTime);
+                        }
+                    }, currentTime * animationSpeed);
+                });
+            });
+            
+            // 计算总动画时间
+            const totalAnimationTime = currentTime + durationTime;
+            
+            // 动画结束后重置状态
+            setTimeout(() => {
+                animationInProgress = false;
+                animationIndicator.style.display = 'none';
+                startBtn.disabled = false;
+                stepBtn.disabled = false;
+            }, totalAnimationTime * animationSpeed);
+        };
+        
+        // 单步演示动画
+        const stepAnimation = () => {
+            if (animationInProgress) return;
+            
+            // 获取所有国家数据条
+            const countryBars = Array.from(document.querySelectorAll('.country-bar'));
+            
+            // 如果当前步骤为0，重置所有元素
+            if (currentStep === 0) {
+                document.querySelectorAll('.country-bar').forEach(bar => {
+                    bar.style.opacity = '0';
+                    bar.querySelector('.bar').style.width = '0%';
+                });
+            }
+            
+            // 如果已经完成所有步骤，重置
+            if (currentStep >= countryBars.length) {
+                currentStep = 0;
+                return;
+            }
+            
+            animationInProgress = true;
+            stepBtn.disabled = true;
+            
+            // 显示当前步骤的元素
+            const currentBar = countryBars[currentStep];
+            const durationTime = parseInt(durationSlider.value);
+            
+            currentBar.style.opacity = '1';
+            currentBar.style.transition = `opacity ${durationTime}ms ease`;
+            
+            // 同时动画显示条形宽度
+            const barElement = currentBar.querySelector('.bar');
+            const targetWidth = barElement.getAttribute('data-target-width');
+            barElement.style.transition = `width ${durationTime}ms ease`;
+            barElement.style.width = `${targetWidth}%`;
+            
+            // 高亮当前年份标题
+            const year = currentBar.getAttribute('data-year');
+            const yearTitle = document.getElementById(`year-${year}`);
+            if (yearTitle) {
+                yearTitle.style.color = '#e74c3c';
+                yearTitle.style.fontWeight = 'bold';
+                
+                // 移除之前的高亮
+                setTimeout(() => {
+                    yearTitle.style.color = '#2c3e50';
+                    yearTitle.style.fontWeight = 'normal';
+                }, durationTime);
+            }
+            
+            // 增加步骤计数器
+            currentStep++;
+            
+            // 动画结束后重置状态
+            setTimeout(() => {
+                animationInProgress = false;
+                stepBtn.disabled = false;
+                
+                // 更新按钮文本
+                if (currentStep >= countryBars.length) {
+                    stepBtn.textContent = '重新开始';
+                } else {
+                    stepBtn.textContent = `下一步 (${currentStep}/${countryBars.length})`;
+                }
+            }, durationTime * animationSpeed);
+        };
+        
+        // 重置可视化
+        const resetVisualization = () => {
+            animationInProgress = false;
+            animationIndicator.style.display = 'none';
+            startBtn.disabled = false;
+            stepBtn.disabled = false;
+            currentStep = 0;
+            
+            // 将所有元素重置为透明
+            document.querySelectorAll('.country-bar').forEach(bar => {
+                bar.style.opacity = '0';
+                bar.querySelector('.bar').style.width = '0%';
+            });
+            
+            // 重置年份标题颜色
+            document.querySelectorAll('.year-title').forEach(title => {
+                title.style.color = '#2c3e50';
+                title.style.fontWeight = 'normal';
+            });
+            
+            // 重置滑块值
+            yearDelaySlider.value = 1000;
+            countryDelaySlider.value = 400;
+            durationSlider.value = 600;
+            speedSlider.value = 1;
+            
+            // 更新显示值
+            updateDisplayValues();
+            
+            // 重置按钮文本
+            stepBtn.textContent = '单步演示';
+        };
+        
+        // 更新显示值
+        const updateDisplayValues = () => {
+            yearDelayValue.textContent = yearDelaySlider.value;
+            countryDelayValue.textContent = countryDelaySlider.value;
+            durationValue.textContent = durationSlider.value;
+            speedValue.textContent = speedSlider.value;
+            
+            // 更新代码块中的值
+            yearDelayCode.textContent = yearDelaySlider.value;
+            countryDelayCode.textContent = countryDelaySlider.value;
+            durationCode.textContent = durationSlider.value;
+        };
+        
+        // 事件监听器
+        yearDelaySlider.addEventListener('input', updateDisplayValues);
+        countryDelaySlider.addEventListener('input', updateDisplayValues);
+        durationSlider.addEventListener('input', updateDisplayValues);
+        speedSlider.addEventListener('input', function() {
+            speedValue.textContent = this.value;
+            animationSpeed = parseFloat(this.value);
+        });
+        
+        startBtn.addEventListener('click', runAnimation);
+        resetBtn.addEventListener('click', resetVisualization);
+        stepBtn.addEventListener('click', stepAnimation);
+        
+        // 初始更新显示值
+        updateDisplayValues();
+        
+        // 添加键盘快捷键
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                if (!animationInProgress) {
+                    runAnimation();
+                }
+            }
+            
+            if (e.key === 'r' || e.key === 'R') {
+                e.preventDefault();
+                resetVisualization();
+            }
+            
+            if (e.key === 's' || e.key === 'S') {
+                e.preventDefault();
+                stepAnimation();
+            }
+        });
+    </script>
+</body>
+</html>
