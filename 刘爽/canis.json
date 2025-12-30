@@ -1,0 +1,43 @@
+{
+  "charts": [
+    {
+      "source": "./charts/mushrooms.dsvg"
+    }
+  ],
+  "animations": [
+    {
+      "selector": ".symbol",
+      "grouping": {
+        "reference": "start after previous",
+        "groupBy": "Surface",
+        "delay": 400,
+        "sort": {
+          "order": ["Smooth", "Scaly", "Fibrous"]
+        },
+        "grouping": {
+          "groupBy": "Odor",
+          "reference": "start after previous",
+          "delay": 60,
+          "sort": {
+            "order": [
+              "Almond",
+              "Anise",
+               "Creosote",
+              "None",
+              "Pungent",
+               "Spicy",
+              "Foul",
+              "Fishy"
+            ]
+          }
+        }
+      },
+      "effects": [
+        {
+          "type": "fade",
+          "duration": 400
+        }
+      ]
+    }
+  ]
+}
